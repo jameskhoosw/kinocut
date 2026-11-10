@@ -1,0 +1,65 @@
+name: KinoCut experimental health check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out experimental branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg and ffprobe
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Install KinoCut from checked-out fork
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Run KinoCut doctor
+        run: |
+          set -euo pipefail
+          kino doctor --json | tee kinocut-doctor.json
+          python - <<'PY'
+          import json
+          with open('kinocut-doctor.json', encoding='utf-8') as f:
+              report = json.load(f)
+          summary = report.get('summary', {})
+          print('KinoCut doctor summary:', summary)
+          if summary.get('required_ok') is not True:
+              raise SystemExit('KinoCut required checks did not pass')
+          PY
+
+      - name: Verify basic media processing
+        run: |
+          set -euo pipefail
+          ffmpeg -hide_banner -loglevel error -f lavfi -i "testsrc2=size=320x180:rate=30" -t 2 -an -c:v libx264 -pix_fmt yuv420p test-video.mp4
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 test-video.mp4
+
+      - name: Upload health-check results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinocut-health-check
+          path: |
+            kinocut-doctor.json
+            test-video.mp4
+          if-no-files-found: ignore
+          retention-days: 3
