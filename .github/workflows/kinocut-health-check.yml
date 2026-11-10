@@ -1,6 +1,11 @@
 name: KinoCut experimental health check
 
 on:
+  push:
+    branches:
+      - experiment/kinocut-health-check
+    paths:
+      - .github/workflows/kinocut-health-check.yml
   workflow_dispatch:
 
 permissions:
